@@ -1,0 +1,108 @@
+name: Release
+
+# Builds an UNSIGNED (ad-hoc signed) app and creates a DRAFT GitHub release with the zip.
+# Nothing is public until you press "Publish release" on the draft.
+#
+# Start it either way:
+#   • push a tag:   git tag v1.2.0 && git push origin v1.2.0
+#   • or Actions tab → Release → Run workflow → enter the version
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.2.0 (the v1.2.0 tag is created when you publish the draft)"
+        required: true
+        type: string
+
+permissions:
+  contents: write   # to create the draft release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      # Ad-hoc builds have no Team ID, so app + widget share data through this group instead.
+      APP_GROUP: group.dev.home.NASDriveHealth
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out version
+        id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then RAW="$GITHUB_REF_NAME"; else RAW="$INPUT_VERSION"; fi
+          VERSION="${RAW#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 1.2.0 (got '$RAW')"; exit 1
+          fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::A release for v$VERSION already exists"; exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (ad-hoc signed, no Apple account)
+        run: |
+          set -o pipefail
+          xcodebuild -project NASDriveHealth.xcodeproj -scheme NASDriveHealth \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath build \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            DEVELOPMENT_TEAM="" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            APP_GROUP_ID="$APP_GROUP" \
+            MARKETING_VERSION="${{ steps.v.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            build | tee build.log | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log
+
+      - name: Check signature and package
+        id: pkg
+        run: |
+          APP="build/Build/Products/Release/NAS Drive Health.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -d --entitlements - --xml "$APP/Contents/PlugIns/DriveHealthWidget.appex" | plutil -p - || true
+          lipo -archs "$APP/Contents/MacOS/NAS Drive Health"
+          ZIP="NAS-Drive-Health-${{ steps.v.outputs.version }}-unsigned.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+          shasum -a 256 "$ZIP" | tee "$ZIP.sha256"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
+        run: |
+          {
+            cat .github/release-notes.md
+            echo
+            echo "---"
+            echo "SHA-256: \`$(cut -d' ' -f1 "$ZIP.sha256")\`"
+          } > notes.md
+          gh release create "$TAG" "$ZIP" \
+            --draft --target "$GITHUB_SHA" \
+            --title "NAS Drive Health $TAG" \
+            --notes-file notes.md
+
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-build-log
+          path: build.log

@@ -74,6 +74,21 @@ xcodegen generate
 open NASDriveHealth.xcodeproj      # then Run the "NAS Drive Health" scheme
 ```
 
+### Or download a release
+
+Prebuilt apps are on the [Releases](https://github.com/Aivun/NASDriveHealth/releases) page. They are **not signed
+or notarized by Apple**, so macOS asks for permission the first time (*System Settings → Privacy & Security →
+Open Anyway*); the release notes walk you through it.
+
+<details>
+<summary>Making a release (maintainer)</summary>
+
+Either push a tag — `git tag v1.2.0 && git push origin v1.2.0` — or go to **Actions → Release → Run workflow**
+and enter the version. The workflow builds a universal, ad-hoc-signed app on GitHub's macOS runner and creates a
+**draft** release with the zip, a SHA-256 checksum and the notes from `.github/release-notes.md`.
+Check the draft, then press **Publish release** (for workflow runs this also creates the tag).
+</details>
+
 ## 3. Configure
 
 A drive icon appears in the menu bar. Click it → **Set up…**
@@ -142,6 +157,7 @@ the key accordingly.
 
 ```
 build.sh                    One-step build & install
+.github/workflows/          build check on every push; release builds (tag or manual run)
 project.yml                 XcodeGen spec (app + widget extension, sandbox, app group)
 Shared/TrueNASClient.swift  JSON-RPC 2.0 WebSocket client, API-key login, certificate pinning
 Shared/HealthService.swift  Queries + health evaluation → HealthSnapshot
