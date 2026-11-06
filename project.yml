@@ -1,0 +1,77 @@
+# Generate the Xcode project with:  xcodegen generate
+# (brew install xcodegen)
+name: NASDriveHealth
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # REQUIRED: your Apple Developer Team ID (10 chars; a free personal team works too).
+    # Find it in Xcode → Settings → Accounts, or developer.apple.com → Membership.
+    # It also names the App Group the app and widget share (TEAMID.nasdrivehealth).
+    DEVELOPMENT_TEAM: "YOURTEAMID"
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+
+targets:
+  NASDriveHealth:
+    type: application
+    platform: macOS
+    sources:
+      - App
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.home.NASDriveHealth
+        PRODUCT_NAME: NAS Drive Health
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: NAS Drive Health
+        LSApplicationCategoryType: public.app-category.utilities
+        LSUIElement: true            # menu bar app, no Dock icon
+        NSLocalNetworkUsageDescription: NAS Drive Health connects to your TrueNAS server on the local network to read drive health.
+        AppGroupID: $(DEVELOPMENT_TEAM).nasdrivehealth
+    entitlements:
+      path: App/App.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - $(DEVELOPMENT_TEAM).nasdrivehealth
+    dependencies:
+      - target: DriveHealthWidget
+        embed: true
+
+  DriveHealthWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Widget
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.home.NASDriveHealth.Widget
+        PRODUCT_NAME: DriveHealthWidget
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Drive Health
+        NSLocalNetworkUsageDescription: The Drive Health widget connects to your TrueNAS server on the local network.
+        AppGroupID: $(DEVELOPMENT_TEAM).nasdrivehealth
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widget/Widget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - $(DEVELOPMENT_TEAM).nasdrivehealth
