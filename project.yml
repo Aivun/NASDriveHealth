@@ -36,6 +36,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: NAS Drive Health
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)   # build.sh stamps a new one each build so macOS reloads the widget list
         LSApplicationCategoryType: public.app-category.utilities
         LSUIElement: true            # menu bar app, no Dock icon
         NSLocalNetworkUsageDescription: NAS Drive Health connects to your TrueNAS server on the local network to read drive health.
@@ -66,6 +68,8 @@ targets:
       path: Widget/Info.plist
       properties:
         CFBundleDisplayName: Drive Health
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSLocalNetworkUsageDescription: The Drive Health widget connects to your TrueNAS server on the local network.
         AppGroupID: $(APP_GROUP_ID)
         NSExtension:
