@@ -10,6 +10,7 @@ struct HealthEntry: TimelineEntry {
     let error: String?
     let config: NASConfig
     var pendingActions: Set<String> = []
+    var restarting: Set<Int> = []
 }
 
 struct Provider: TimelineProvider {
@@ -41,6 +42,7 @@ struct Provider: TimelineProvider {
                 entry = HealthEntry(date: .now, snapshot: outcome.snapshot, error: outcome.error, config: config)
             }
             entry.pendingActions = pending
+            entry.restarting = RestartTracker.active
             var entries = [entry]
             if !pending.isEmpty {
                 // Drop the "Stop?" confirmation once its window has passed.
@@ -48,7 +50,7 @@ struct Provider: TimelineProvider {
                 cleared.pendingActions = []
                 entries.append(HealthEntry(date: Date().addingTimeInterval(PendingActionStore.window),
                                            snapshot: cleared.snapshot, error: cleared.error,
-                                           config: cleared.config))
+                                           config: cleared.config, restarting: entry.restarting))
             }
             let next = Date().addingTimeInterval(Double(max(5, config.refreshMinutes)) * 60)
             completion(Timeline(entries: entries, policy: .after(next)))

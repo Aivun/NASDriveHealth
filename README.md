@@ -128,7 +128,7 @@ The **NAS Virtual Machines** widget (medium / large) and the menu bar app discov
 |---|---|
 | ▶ Start | `vm.start` — enabled when the VM is stopped |
 | ■ Stop | graceful ACPI shutdown (`vm.stop`, not forced). **Click twice** — the first click turns it into *Stop?* for 10 s |
-| ↻ Restart | `vm.restart` — enabled when the VM is running. **Click twice**, like Stop |
+| ↻ Restart | graceful shutdown, wait until stopped, then start again (retrying once). **Click twice**, like Stop. Restarts are carried out by the menu bar app, so it must be running |
 | ⚙ Settings | opens the Virtual Machines page of the TrueNAS web UI in your browser (path configurable in Settings, default `/ui/vm`) |
 
 Listing VMs works with the read-only account. **Starting, stopping and restarting needs the `VM_WRITE` role**,
@@ -141,6 +141,8 @@ which *Readonly Admin* doesn't include. Give the widget account just that one ex
 
 The existing API key picks up the new role on its next call; no new key is needed. *Save & Test Connection*
 in the app reports whether start/stop is allowed.
+
+Errors (e.g. a VM that shut down but couldn't start) appear under the VM list; click ✕ to dismiss them.
 
 Note that `VM_WRITE` also allows editing or deleting VMs through the API. The app never does that, but treat
 the key accordingly.

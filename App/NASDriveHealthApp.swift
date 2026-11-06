@@ -30,9 +30,45 @@ final class AppModel: ObservableObject {
     @Published var config = NASConfig.load()
     private var timer: Timer?
 
+    private var queueTimer: Timer?
+
     init() {
         reschedule()
         Task { await refresh() }
+        listenForWidgetRestarts()
+    }
+
+    /// The widget queues restarts (they take minutes) and pings us via a Darwin notification.
+    /// A slow poll covers any missed ping.
+    private func listenForWidgetRestarts() {
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(), observer,
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
+                Task { @MainActor in model.runQueuedRestarts() }
+            },
+            RestartQueue.notification as CFString, nil, .deliverImmediately)
+        queueTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.runQueuedRestarts() }
+        }
+        runQueuedRestarts()
+    }
+
+    func runQueuedRestarts() {
+        for item in RestartQueue.drain() where !busyVMs.contains(item.id) {
+            let vm = snapshot?.vms?.first { $0.id == item.id }
+                ?? VMInfo(id: item.id, name: item.name, description: "", state: "RUNNING",
+                          autostart: false, vcpus: 0, memoryMiB: 0)
+            Task { await vmAction(.restart, vm) }
+        }
+    }
+
+    func dismissVMMessage() {
+        vmMessage = nil
+        VMControl.lastError = nil
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     var level: HealthLevel {
@@ -63,6 +99,8 @@ final class AppModel: ObservableObject {
 
     func vmAction(_ action: VMAction, _ vm: VMInfo) async {
         busyVMs.insert(vm.id)
+        vmMessage = nil
+        if action == .restart { WidgetCenter.shared.reloadAllTimelines() }   // show "Restarting…"
         vmMessage = await VMControl.perform(action, vmID: vm.id, vmName: vm.name)
         busyVMs.remove(vm.id)
         if let s = SnapshotStore.load() { snapshot = s }
@@ -133,7 +171,7 @@ struct MenuContent: View {
                         }
                     }
                     ForEach(snap.sortedVMs) { vm in
-                        MenuVMRow(vm: vm, busy: model.busyVMs.contains(vm.id),
+                        MenuVMRow(vm: vm, busy: model.busyVMs.contains(vm.id) || RestartTracker.active.contains(vm.id),
                                   settingsURL: model.config.vmPageURL,
                                   stopArmed: armed == PendingActionStore.tag(.stop, vm.id),
                                   restartArmed: armed == PendingActionStore.tag(.restart, vm.id),
@@ -142,8 +180,16 @@ struct MenuContent: View {
                                   onRestart: { confirmTap(.restart, vm) })
                     }
                     if let msg = model.vmMessage {
-                        Text(msg).font(.caption2).foregroundStyle(.orange)
-                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(alignment: .top, spacing: 4) {
+                            Text(msg).font(.caption2).foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Button { model.dismissVMMessage() } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Dismiss")
+                        }
                     }
                 }
                 if !snap.alerts.isEmpty {

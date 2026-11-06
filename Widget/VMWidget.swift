@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
+import AppKit
 
 // MARK: - Button intents (run inside the widget extension)
 
@@ -55,7 +56,34 @@ struct RestartVMIntent: AppIntent {
     init(vm: VMInfo) { vmID = vm.id; vmName = vm.name }
 
     func perform() async throws -> some IntentResult {
-        await confirmThenRun(.restart, vmID: vmID, vmName: vmName)
+        guard PendingActionStore.isPending(.restart, vmID) else {
+            PendingActionStore.arm(.restart, vmID)          // first click: show "Restart?"
+            return .result()
+        }
+        PendingActionStore.clear(vmID)
+        // A restart can take minutes (guest shutdown), longer than a widget button may run,
+        // so the menu bar app does it. The widget just queues it.
+        if menuBarAppIsRunning {
+            VMControl.lastError = nil
+            RestartTracker.begin(vmID)
+            RestartQueue.enqueue(id: vmID, name: vmName)
+        } else {
+            VMControl.lastError = "Restart is handled by the NAS Drive Health menu bar app — open it and try again."
+        }
+        return .result()
+    }
+
+    private var menuBarAppIsRunning: Bool {
+        let widgetID = Bundle.main.bundleIdentifier ?? ""
+        let appID = widgetID.hasSuffix(".Widget") ? String(widgetID.dropLast(".Widget".count)) : "dev.home.NASDriveHealth"
+        return !NSRunningApplication.runningApplications(withBundleIdentifier: appID).isEmpty
+    }
+}
+
+struct DismissVMErrorIntent: AppIntent {
+    static var title: LocalizedStringResource = "Dismiss VM warning"
+    func perform() async throws -> some IntentResult {
+        VMControl.lastError = nil
         return .result()
     }
 }
@@ -100,6 +128,7 @@ struct VMWidgetView: View {
                     ForEach(sorted.prefix(maxRows)) { vm in
                         VMRow(vm: vm, config: entry.config,
                               pending: entry.pendingActions,
+                              restarting: entry.restarting.contains(vm.id),
                               showSpecs: family == .systemLarge)
                     }
                     if sorted.count > maxRows {
@@ -120,7 +149,12 @@ struct VMWidgetView: View {
             HStack(spacing: 4) {
                 if let err = VMControl.lastError {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text(err).lineLimit(1)
+                    Text(err).lineLimit(2)
+                    Button(intent: DismissVMErrorIntent()) {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss")
                 } else if let snap = entry.snapshot {
                     Text(snap.fetchedAt, style: .relative) + Text(" ago")
                 }
@@ -137,13 +171,14 @@ struct VMRow: View {
     let vm: VMInfo
     let config: NASConfig
     let pending: Set<String>
+    let restarting: Bool
     let showSpecs: Bool
 
     private var stopPending: Bool { pending.contains(PendingActionStore.tag(.stop, vm.id)) }
     private var restartPending: Bool { pending.contains(PendingActionStore.tag(.restart, vm.id)) }
 
     private var stateColor: Color {
-        vm.isRunning ? .green : vm.isStopped ? .gray : .orange
+        restarting ? .orange : vm.isRunning ? .green : vm.isStopped ? .gray : .orange
     }
 
     var body: some View {
@@ -151,7 +186,7 @@ struct VMRow: View {
             Circle().fill(stateColor).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 0) {
                 Text(vm.name).font(.caption.weight(.medium)).lineLimit(1)
-                Text(showSpecs ? "\(vm.stateLabel) · \(vm.specText)" : vm.stateLabel)
+                Text(restarting ? "Restarting…" : showSpecs ? "\(vm.stateLabel) · \(vm.specText)" : vm.stateLabel)
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
@@ -159,7 +194,7 @@ struct VMRow: View {
             Button(intent: StartVMIntent(vm: vm)) {
                 Image(systemName: "play.fill").frame(width: 22, height: 18)
             }
-            .disabled(!vm.isStopped)
+            .disabled(!vm.isStopped || restarting)
             .help("Start \(vm.name)")
 
             Button(intent: StopVMIntent(vm: vm)) {
@@ -170,7 +205,7 @@ struct VMRow: View {
                     Image(systemName: "stop.fill").frame(width: 22, height: 18)
                 }
             }
-            .disabled(!vm.isRunning)
+            .disabled(!vm.isRunning || restarting)
             .help(stopPending ? "Click again to shut down \(vm.name)" : "Stop \(vm.name)")
 
             Button(intent: RestartVMIntent(vm: vm)) {
@@ -181,7 +216,7 @@ struct VMRow: View {
                     Image(systemName: "arrow.clockwise").frame(width: 22, height: 18)
                 }
             }
-            .disabled(!vm.isRunning)
+            .disabled(!vm.isRunning || restarting)
             .help(restartPending ? "Click again to restart \(vm.name)" : "Restart \(vm.name)")
 
             if let url = config.vmPageURL {
