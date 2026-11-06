@@ -24,6 +24,6 @@ If macOS asks whether *NAS Drive Health* may **access data from other apps**, cl
 
 ### Setup
 
-You need a TrueNAS 25.04+ account with an API key — see the [README](https://github.com/Aivun/NASDriveHealth#1-create-a-read-only-account-on-truenas). VM start/stop/restart additionally needs the `VM_WRITE` role.
+You need a TrueNAS 25.04+ account with an API key — see the [README](https://github.com/Aivun/NASDriveHealth#1-create-a-read-only-account-on-truenas). VM start/stop additionally needs the `VM_WRITE` role.
 
 Requires macOS 14 Sonoma or newer (Apple Silicon or Intel).

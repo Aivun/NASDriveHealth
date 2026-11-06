@@ -30,39 +30,9 @@ final class AppModel: ObservableObject {
     @Published var config = NASConfig.load()
     private var timer: Timer?
 
-    private var queueTimer: Timer?
-
     init() {
         reschedule()
         Task { await refresh() }
-        listenForWidgetRestarts()
-    }
-
-    /// The widget queues restarts (they take minutes) and pings us via a Darwin notification.
-    /// A slow poll covers any missed ping.
-    private func listenForWidgetRestarts() {
-        let observer = Unmanaged.passUnretained(self).toOpaque()
-        CFNotificationCenterAddObserver(
-            CFNotificationCenterGetDarwinNotifyCenter(), observer,
-            { _, observer, _, _, _ in
-                guard let observer else { return }
-                let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
-                Task { @MainActor in model.runQueuedRestarts() }
-            },
-            RestartQueue.notification as CFString, nil, .deliverImmediately)
-        queueTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.runQueuedRestarts() }
-        }
-        runQueuedRestarts()
-    }
-
-    func runQueuedRestarts() {
-        for item in RestartQueue.drain() where !busyVMs.contains(item.id) {
-            let vm = snapshot?.vms?.first { $0.id == item.id }
-                ?? VMInfo(id: item.id, name: item.name, description: "", state: "RUNNING",
-                          autostart: false, vcpus: 0, memoryMiB: 0)
-            Task { await vmAction(.restart, vm) }
-        }
     }
 
     func dismissVMMessage() {
@@ -100,7 +70,6 @@ final class AppModel: ObservableObject {
     func vmAction(_ action: VMAction, _ vm: VMInfo) async {
         busyVMs.insert(vm.id)
         vmMessage = nil
-        if action == .restart { WidgetCenter.shared.reloadAllTimelines() }   // show "Restarting…"
         vmMessage = await VMControl.perform(action, vmID: vm.id, vmName: vm.name)
         busyVMs.remove(vm.id)
         if let s = SnapshotStore.load() { snapshot = s }
@@ -117,9 +86,9 @@ final class AppModel: ObservableObject {
 struct MenuContent: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openWindow) private var openWindow
-    @State private var armed: String?   // "stop:3" / "restart:5" awaiting a second click
+    @State private var armed: String?   // e.g. "stop:3" awaiting a second click
 
-    /// First click arms Stop/Restart, a second click within 10 s runs it.
+    /// First click arms Stop, a second click within 10 s runs it.
     private func confirmTap(_ action: VMAction, _ vm: VMInfo) {
         let tag = PendingActionStore.tag(action, vm.id)
         if armed == tag {
@@ -171,13 +140,11 @@ struct MenuContent: View {
                         }
                     }
                     ForEach(snap.sortedVMs) { vm in
-                        MenuVMRow(vm: vm, busy: model.busyVMs.contains(vm.id) || RestartTracker.active.contains(vm.id),
+                        MenuVMRow(vm: vm, busy: model.busyVMs.contains(vm.id),
                                   settingsURL: model.config.vmPageURL,
                                   stopArmed: armed == PendingActionStore.tag(.stop, vm.id),
-                                  restartArmed: armed == PendingActionStore.tag(.restart, vm.id),
                                   onStart: { armed = nil; Task { await model.vmAction(.start, vm) } },
-                                  onStop: { confirmTap(.stop, vm) },
-                                  onRestart: { confirmTap(.restart, vm) })
+                                  onStop: { confirmTap(.stop, vm) })
                     }
                     if let msg = model.vmMessage {
                         HStack(alignment: .top, spacing: 4) {
@@ -231,10 +198,8 @@ struct MenuVMRow: View {
     let busy: Bool
     let settingsURL: URL?
     let stopArmed: Bool
-    let restartArmed: Bool
     let onStart: () -> Void
     let onStop: () -> Void
-    let onRestart: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -258,15 +223,6 @@ struct MenuVMRow: View {
             }
             .disabled(!vm.isRunning || busy)
             .help(stopArmed ? "Click again to shut down \(vm.name)" : "Shut down (asks to confirm)")
-            Button(action: onRestart) {
-                if restartArmed {
-                    Text("Restart?").foregroundStyle(.orange)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                }
-            }
-            .disabled(!vm.isRunning || busy)
-            .help(restartArmed ? "Click again to restart \(vm.name)" : "Restart (asks to confirm)")
             Button {
                 if let settingsURL { NSWorkspace.shared.open(settingsURL) }
             } label: { Image(systemName: "gearshape.fill") }

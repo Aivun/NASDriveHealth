@@ -42,7 +42,8 @@ step "Building (Release)"
 rm -rf build
 set +e
 xcodebuild -project NASDriveHealth.xcodeproj -scheme NASDriveHealth -configuration Release \
-  -derivedDataPath build -allowProvisioningUpdates -destination 'platform=macOS' build \
+  -derivedDataPath build -allowProvisioningUpdates -destination 'platform=macOS' \
+  CURRENT_PROJECT_VERSION="$(date +%Y%m%d%H%M)" build \
   2>&1 | tee build.log | grep -E "error:|warning: .*(deprecated|unused)|BUILD (SUCCEEDED|FAILED)|\*\* "
 STATUS=${PIPESTATUS[0]}
 set -e
@@ -54,6 +55,19 @@ mkdir -p "$HOME/Applications"
 pkill -x "NAS Drive Health" 2>/dev/null || true
 rm -rf "$HOME/Applications/NAS Drive Health.app"
 cp -R "$APP" "$HOME/Applications/"
-open "$HOME/Applications/NAS Drive Health.app"
+INSTALLED="$HOME/Applications/NAS Drive Health.app"
+
+step "Refreshing macOS widget registration"
+# Only the installed copy should be known to macOS, not the one in the build folder.
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREG" -u "$APP" >/dev/null 2>&1 || true
+rm -rf build/Build/Products
+"$LSREG" -f "$INSTALLED" >/dev/null 2>&1 || true
+pluginkit -a "$INSTALLED/Contents/PlugIns/DriveHealthWidget.appex" 2>/dev/null || true
+# The widget daemon caches the widget list; it restarts by itself.
+killall chronod 2>/dev/null || true
+
+open "$INSTALLED"
 
 printf '\n\033[1;32mDone!\033[0m Look for the drive icon in the menu bar → Set up…\n'
+printf 'Widgets: right-click the desktop → Edit Widgets… → search "NAS" (Drive Health and Virtual Machines).\n'

@@ -10,7 +10,6 @@ struct HealthEntry: TimelineEntry {
     let error: String?
     let config: NASConfig
     var pendingActions: Set<String> = []
-    var restarting: Set<Int> = []
 }
 
 struct Provider: TimelineProvider {
@@ -33,7 +32,7 @@ struct Provider: TimelineProvider {
             let pending = PendingActionStore.active
             var entry: HealthEntry
             // The menu bar app refreshes on its own schedule and then reloads the widget;
-            // if its data is fresh (or a Stop/Restart confirmation is showing), skip hitting the NAS.
+            // if its data is fresh (or a Stop confirmation is showing), skip hitting the NAS.
             if let cached = SnapshotStore.load(),
                !pending.isEmpty || Date().timeIntervalSince(cached.fetchedAt) < 90 {
                 entry = HealthEntry(date: .now, snapshot: cached, error: SnapshotStore.lastError, config: config)
@@ -42,7 +41,6 @@ struct Provider: TimelineProvider {
                 entry = HealthEntry(date: .now, snapshot: outcome.snapshot, error: outcome.error, config: config)
             }
             entry.pendingActions = pending
-            entry.restarting = RestartTracker.active
             var entries = [entry]
             if !pending.isEmpty {
                 // Drop the "Stop?" confirmation once its window has passed.
@@ -50,7 +48,7 @@ struct Provider: TimelineProvider {
                 cleared.pendingActions = []
                 entries.append(HealthEntry(date: Date().addingTimeInterval(PendingActionStore.window),
                                            snapshot: cleared.snapshot, error: cleared.error,
-                                           config: cleared.config, restarting: entry.restarting))
+                                           config: cleared.config))
             }
             let next = Date().addingTimeInterval(Double(max(5, config.refreshMinutes)) * 60)
             completion(Timeline(entries: entries, policy: .after(next)))

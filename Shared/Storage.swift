@@ -157,7 +157,7 @@ enum SnapshotStore {
     }
 }
 
-// MARK: - Two-tap confirmation (Stop / Restart) for widget buttons
+// MARK: - Two-tap confirmation (Stop) for widget buttons
 
 enum PendingActionStore {
     private static let key = "pendingVMActions"
@@ -170,7 +170,7 @@ enum PendingActionStore {
         set { AppGroup.defaults.set(newValue, forKey: key) }
     }
 
-    /// Tags ("stop:3", "restart:5") whose button was tapped once within the confirmation window.
+    /// Tags (e.g. "stop:3") whose button was tapped once within the confirmation window.
     static var active: Set<String> {
         let now = Date().timeIntervalSince1970
         return Set(all.compactMap { k, t in now - t < window ? k : nil })
@@ -188,44 +188,3 @@ enum PendingActionStore {
     static func clear(_ id: Int) { all = all.filter { !$0.key.hasSuffix(":\(id)") } }
 }
 
-// MARK: - Restarts (run by the menu bar app; the widget only queues them)
-
-/// VMs currently being restarted (stop → wait → start), with the time it began.
-enum RestartTracker {
-    private static let key = "restartingVMs"
-    static let maxDuration: TimeInterval = 10 * 60
-
-    private static var all: [String: Double] {
-        get { AppGroup.defaults.dictionary(forKey: key) as? [String: Double] ?? [:] }
-        set { AppGroup.defaults.set(newValue, forKey: key) }
-    }
-
-    static var active: Set<Int> {
-        let now = Date().timeIntervalSince1970
-        return Set(all.compactMap { k, t in now - t < maxDuration ? Int(k) : nil })
-    }
-
-    static func begin(_ id: Int) { var a = all; a[String(id)] = Date().timeIntervalSince1970; all = a }
-    static func end(_ id: Int) { var a = all; a[String(id)] = nil; all = a }
-}
-
-/// Widget → app hand-off: the widget queues a restart and pings the app with a Darwin notification.
-enum RestartQueue {
-    private static let key = "restartQueue"
-    static let notification = "dev.home.NASDriveHealth.restartRequested"
-
-    static func enqueue(id: Int, name: String) {
-        var q = AppGroup.defaults.dictionary(forKey: key) as? [String: String] ?? [:]
-        q[String(id)] = name
-        AppGroup.defaults.set(q, forKey: key)
-        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                             CFNotificationName(notification as CFString), nil, nil, true)
-    }
-
-    /// Returns and clears all queued restarts.
-    static func drain() -> [(id: Int, name: String)] {
-        let q = AppGroup.defaults.dictionary(forKey: key) as? [String: String] ?? [:]
-        AppGroup.defaults.removeObject(forKey: key)
-        return q.compactMap { k, v in Int(k).map { (id: $0, name: v) } }
-    }
-}

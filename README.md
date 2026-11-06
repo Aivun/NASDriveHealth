@@ -4,7 +4,7 @@
 
 A native WidgetKit widget (small / medium / large) plus a tiny menu bar app that shows the
 health of every drive in your TrueNAS box — HDDs, SATA SSDs and NVMe alike. A second widget,
-**NAS Virtual Machines**, lists your TrueNAS VMs with **Start**, **Stop**, **Restart** and **Settings** buttons.
+**NAS Virtual Machines**, lists your TrueNAS VMs with **Start**, **Stop** and **Settings** buttons.
 
 Per drive it shows: status dot, device name, HDD/SSD/NVMe badge, model & size (large widget),
 temperature, and ZFS read/write/checksum error counts. A drive turns **orange/red** when:
@@ -122,16 +122,15 @@ refreshes on demand.
 ## VM controls (optional)
 
 The **NAS Virtual Machines** widget (medium / large) and the menu bar app discover every VM from
-`vm.query` and show four buttons per VM:
+`vm.query` and show three buttons per VM:
 
 | Button | What it does |
 |---|---|
 | ▶ Start | `vm.start` — enabled when the VM is stopped |
 | ■ Stop | graceful ACPI shutdown (`vm.stop`, not forced). **Click twice** — the first click turns it into *Stop?* for 10 s |
-| ↻ Restart | graceful shutdown, wait until stopped, then start again (retrying once). **Click twice**, like Stop. Restarts are carried out by the menu bar app, so it must be running |
 | ⚙ Settings | opens the Virtual Machines page of the TrueNAS web UI in your browser (path configurable in Settings, default `/ui/vm`) |
 
-Listing VMs works with the read-only account. **Starting, stopping and restarting needs the `VM_WRITE` role**,
+Listing VMs works with the read-only account. **Starting and stopping needs the `VM_WRITE` role**,
 which *Readonly Admin* doesn't include. Give the widget account just that one extra role:
 
 1. **Credentials → Groups → Add**: create a group, e.g. `nas-widget-vm`.
@@ -142,7 +141,7 @@ which *Readonly Admin* doesn't include. Give the widget account just that one ex
 The existing API key picks up the new role on its next call; no new key is needed. *Save & Test Connection*
 in the app reports whether start/stop is allowed.
 
-Errors (e.g. a VM that shut down but couldn't start) appear under the VM list; click ✕ to dismiss them.
+Errors (e.g. a VM that failed to start) appear under the VM list; click ✕ to dismiss them.
 
 Note that `VM_WRITE` also allows editing or deleting VMs through the API. The app never does that, but treat
 the key accordingly.
