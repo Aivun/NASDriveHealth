@@ -9,7 +9,7 @@ struct HealthEntry: TimelineEntry {
     let snapshot: HealthSnapshot?
     let error: String?
     let config: NASConfig
-    var pendingStops: Set<Int> = []
+    var pendingActions: Set<String> = []
 }
 
 struct Provider: TimelineProvider {
@@ -29,10 +29,10 @@ struct Provider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<HealthEntry>) -> Void) {
         Task {
             let config = NASConfig.load()
-            let pending = PendingStopStore.active
+            let pending = PendingActionStore.active
             var entry: HealthEntry
             // The menu bar app refreshes on its own schedule and then reloads the widget;
-            // if its data is fresh (or a Stop confirmation is showing), skip hitting the NAS.
+            // if its data is fresh (or a Stop/Restart confirmation is showing), skip hitting the NAS.
             if let cached = SnapshotStore.load(),
                !pending.isEmpty || Date().timeIntervalSince(cached.fetchedAt) < 90 {
                 entry = HealthEntry(date: .now, snapshot: cached, error: SnapshotStore.lastError, config: config)
@@ -40,13 +40,13 @@ struct Provider: TimelineProvider {
                 let outcome = await HealthService.refreshAndStore()
                 entry = HealthEntry(date: .now, snapshot: outcome.snapshot, error: outcome.error, config: config)
             }
-            entry.pendingStops = pending
+            entry.pendingActions = pending
             var entries = [entry]
             if !pending.isEmpty {
                 // Drop the "Stop?" confirmation once its window has passed.
                 var cleared = entry
-                cleared.pendingStops = []
-                entries.append(HealthEntry(date: Date().addingTimeInterval(PendingStopStore.window),
+                cleared.pendingActions = []
+                entries.append(HealthEntry(date: Date().addingTimeInterval(PendingActionStore.window),
                                            snapshot: cleared.snapshot, error: cleared.error,
                                            config: cleared.config))
             }

@@ -157,24 +157,33 @@ enum SnapshotStore {
     }
 }
 
-// MARK: - Two-tap "Stop" confirmation for widget buttons
+// MARK: - Two-tap confirmation (Stop / Restart) for widget buttons
 
-enum PendingStopStore {
-    private static let key = "pendingStops"
+enum PendingActionStore {
+    private static let key = "pendingVMActions"
     static let window: TimeInterval = 10
+
+    static func tag(_ action: VMAction, _ id: Int) -> String { "\(action.rawValue):\(id)" }
 
     private static var all: [String: Double] {
         get { AppGroup.defaults.dictionary(forKey: key) as? [String: Double] ?? [:] }
         set { AppGroup.defaults.set(newValue, forKey: key) }
     }
 
-    /// VM ids whose Stop button was tapped once within the confirmation window.
-    static var active: Set<Int> {
+    /// Tags ("stop:3", "restart:5") whose button was tapped once within the confirmation window.
+    static var active: Set<String> {
         let now = Date().timeIntervalSince1970
-        return Set(all.compactMap { k, t in now - t < window ? Int(k) : nil })
+        return Set(all.compactMap { k, t in now - t < window ? k : nil })
     }
 
-    static func isPending(_ id: Int) -> Bool { active.contains(id) }
-    static func set(_ id: Int) { var a = all; a[String(id)] = Date().timeIntervalSince1970; all = a }
-    static func clear(_ id: Int) { var a = all; a[String(id)] = nil; all = a }
+    static func isPending(_ action: VMAction, _ id: Int) -> Bool { active.contains(tag(action, id)) }
+
+    /// Arms one action for a VM (disarming any other armed action on that VM).
+    static func arm(_ action: VMAction, _ id: Int) {
+        var a = all.filter { !$0.key.hasSuffix(":\(id)") }
+        a[tag(action, id)] = Date().timeIntervalSince1970
+        all = a
+    }
+
+    static func clear(_ id: Int) { all = all.filter { !$0.key.hasSuffix(":\(id)") } }
 }

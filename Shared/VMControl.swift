@@ -1,13 +1,14 @@
 import Foundation
 
 enum VMAction: String, Sendable {
-    case start, stop
+    case start, stop, restart
 
-    var verb: String { self == .start ? "start" : "stop" }
+    var verb: String { rawValue }
 }
 
 /// Starts / stops a TrueNAS VM. Needs an API key whose account has the VM_WRITE role
-/// (see README → "VM controls"). Stop is a graceful ACPI shutdown, like pressing the power button.
+/// (see README → "VM controls"). Stop is a graceful ACPI shutdown, like pressing the power button;
+/// Restart is TrueNAS's vm.restart (shut down, then start again).
 enum VMControl {
     private static let errorKey = "lastVMError"
 
@@ -37,6 +38,8 @@ enum VMControl {
                     _ = try await client.call("vm.start", [vmID])
                 case .stop:
                     _ = try await client.call("vm.stop", [vmID, ["force": false, "force_after_timeout": false]])
+                case .restart:
+                    _ = try await client.call("vm.restart", [vmID])
                 }
             }
         } catch TrueNASClient.ClientError.rpc(let code, let msg) {

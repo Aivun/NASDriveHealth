@@ -1,8 +1,10 @@
 # NAS Drive Health — macOS desktop widget for TrueNAS
 
+[![Build](https://github.com/Aivun/NASDriveHealth/actions/workflows/build.yml/badge.svg)](https://github.com/Aivun/NASDriveHealth/actions/workflows/build.yml)
+
 A native WidgetKit widget (small / medium / large) plus a tiny menu bar app that shows the
 health of every drive in your TrueNAS box — HDDs, SATA SSDs and NVMe alike. A second widget,
-**NAS Virtual Machines**, lists your TrueNAS VMs with **Start**, **Stop** and **Settings** buttons.
+**NAS Virtual Machines**, lists your TrueNAS VMs with **Start**, **Stop**, **Restart** and **Settings** buttons.
 
 Per drive it shows: status dot, device name, HDD/SSD/NVMe badge, model & size (large widget),
 temperature, and ZFS read/write/checksum error counts. A drive turns **orange/red** when:
@@ -105,15 +107,16 @@ refreshes on demand.
 ## VM controls (optional)
 
 The **NAS Virtual Machines** widget (medium / large) and the menu bar app discover every VM from
-`vm.query` and show three buttons per VM:
+`vm.query` and show four buttons per VM:
 
 | Button | What it does |
 |---|---|
 | ▶ Start | `vm.start` — enabled when the VM is stopped |
 | ■ Stop | graceful ACPI shutdown (`vm.stop`, not forced). **Click twice** — the first click turns it into *Stop?* for 10 s |
+| ↻ Restart | `vm.restart` — enabled when the VM is running. **Click twice**, like Stop |
 | ⚙ Settings | opens the Virtual Machines page of the TrueNAS web UI in your browser (path configurable in Settings, default `/ui/vm`) |
 
-Listing VMs works with the read-only account. **Starting and stopping needs the `VM_WRITE` role**,
+Listing VMs works with the read-only account. **Starting, stopping and restarting needs the `VM_WRITE` role**,
 which *Readonly Admin* doesn't include. Give the widget account just that one extra role:
 
 1. **Credentials → Groups → Add**: create a group, e.g. `nas-widget-vm`.

@@ -79,7 +79,22 @@ final class AppModel: ObservableObject {
 struct MenuContent: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.openWindow) private var openWindow
-    @State private var armedStop: Int?
+    @State private var armed: String?   // "stop:3" / "restart:5" awaiting a second click
+
+    /// First click arms Stop/Restart, a second click within 10 s runs it.
+    private func confirmTap(_ action: VMAction, _ vm: VMInfo) {
+        let tag = PendingActionStore.tag(action, vm.id)
+        if armed == tag {
+            armed = nil
+            Task { await model.vmAction(action, vm) }
+        } else {
+            armed = tag
+            Task {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                if armed == tag { armed = nil }
+            }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -120,20 +135,11 @@ struct MenuContent: View {
                     ForEach(snap.sortedVMs) { vm in
                         MenuVMRow(vm: vm, busy: model.busyVMs.contains(vm.id),
                                   settingsURL: model.config.vmPageURL,
-                                  stopArmed: armedStop == vm.id,
-                                  onStart: { armedStop = nil; Task { await model.vmAction(.start, vm) } },
-                                  onStop: {
-                                      if armedStop == vm.id {
-                                          armedStop = nil
-                                          Task { await model.vmAction(.stop, vm) }
-                                      } else {
-                                          armedStop = vm.id
-                                          Task {   // disarm after 10 s
-                                              try? await Task.sleep(nanoseconds: 10_000_000_000)
-                                              if armedStop == vm.id { armedStop = nil }
-                                          }
-                                      }
-                                  })
+                                  stopArmed: armed == PendingActionStore.tag(.stop, vm.id),
+                                  restartArmed: armed == PendingActionStore.tag(.restart, vm.id),
+                                  onStart: { armed = nil; Task { await model.vmAction(.start, vm) } },
+                                  onStop: { confirmTap(.stop, vm) },
+                                  onRestart: { confirmTap(.restart, vm) })
                     }
                     if let msg = model.vmMessage {
                         Text(msg).font(.caption2).foregroundStyle(.orange)
@@ -179,8 +185,10 @@ struct MenuVMRow: View {
     let busy: Bool
     let settingsURL: URL?
     let stopArmed: Bool
+    let restartArmed: Bool
     let onStart: () -> Void
     let onStop: () -> Void
+    let onRestart: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -204,6 +212,15 @@ struct MenuVMRow: View {
             }
             .disabled(!vm.isRunning || busy)
             .help(stopArmed ? "Click again to shut down \(vm.name)" : "Shut down (asks to confirm)")
+            Button(action: onRestart) {
+                if restartArmed {
+                    Text("Restart?").foregroundStyle(.orange)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+            .disabled(!vm.isRunning || busy)
+            .help(restartArmed ? "Click again to restart \(vm.name)" : "Restart (asks to confirm)")
             Button {
                 if let settingsURL { NSWorkspace.shared.open(settingsURL) }
             } label: { Image(systemName: "gearshape.fill") }

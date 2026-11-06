@@ -14,13 +14,22 @@ struct StartVMIntent: AppIntent {
     init(vm: VMInfo) { vmID = vm.id; vmName = vm.name }
 
     func perform() async throws -> some IntentResult {
-        PendingStopStore.clear(vmID)
+        PendingActionStore.clear(vmID)
         await VMControl.perform(.start, vmID: vmID, vmName: vmName)
         return .result()
     }
 }
 
-/// First tap arms the button ("Stop?"), a second tap within 10 s shuts the VM down gracefully.
+/// First tap arms the button, a second tap within 10 s runs the action.
+private func confirmThenRun(_ action: VMAction, vmID: Int, vmName: String) async {
+    if PendingActionStore.isPending(action, vmID) {
+        PendingActionStore.clear(vmID)
+        await VMControl.perform(action, vmID: vmID, vmName: vmName)
+    } else {
+        PendingActionStore.arm(action, vmID)
+    }
+}
+
 struct StopVMIntent: AppIntent {
     static var title: LocalizedStringResource = "Stop virtual machine"
 
@@ -31,12 +40,22 @@ struct StopVMIntent: AppIntent {
     init(vm: VMInfo) { vmID = vm.id; vmName = vm.name }
 
     func perform() async throws -> some IntentResult {
-        if PendingStopStore.isPending(vmID) {
-            PendingStopStore.clear(vmID)
-            await VMControl.perform(.stop, vmID: vmID, vmName: vmName)
-        } else {
-            PendingStopStore.set(vmID)
-        }
+        await confirmThenRun(.stop, vmID: vmID, vmName: vmName)
+        return .result()
+    }
+}
+
+struct RestartVMIntent: AppIntent {
+    static var title: LocalizedStringResource = "Restart virtual machine"
+
+    @Parameter(title: "VM ID") var vmID: Int
+    @Parameter(title: "VM name") var vmName: String
+
+    init() {}
+    init(vm: VMInfo) { vmID = vm.id; vmName = vm.name }
+
+    func perform() async throws -> some IntentResult {
+        await confirmThenRun(.restart, vmID: vmID, vmName: vmName)
         return .result()
     }
 }
@@ -50,7 +69,7 @@ struct VMWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("NAS Virtual Machines")
-        .description("Start, stop and open the settings of the virtual machines on your TrueNAS.")
+        .description("Start, stop, restart and open the settings of the virtual machines on your TrueNAS.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
@@ -80,7 +99,7 @@ struct VMWidgetView: View {
                     let sorted = snap.sortedVMs
                     ForEach(sorted.prefix(maxRows)) { vm in
                         VMRow(vm: vm, config: entry.config,
-                              stopPending: entry.pendingStops.contains(vm.id),
+                              pending: entry.pendingActions,
                               showSpecs: family == .systemLarge)
                     }
                     if sorted.count > maxRows {
@@ -117,8 +136,11 @@ struct VMWidgetView: View {
 struct VMRow: View {
     let vm: VMInfo
     let config: NASConfig
-    let stopPending: Bool
+    let pending: Set<String>
     let showSpecs: Bool
+
+    private var stopPending: Bool { pending.contains(PendingActionStore.tag(.stop, vm.id)) }
+    private var restartPending: Bool { pending.contains(PendingActionStore.tag(.restart, vm.id)) }
 
     private var stateColor: Color {
         vm.isRunning ? .green : vm.isStopped ? .gray : .orange
@@ -150,6 +172,17 @@ struct VMRow: View {
             }
             .disabled(!vm.isRunning)
             .help(stopPending ? "Click again to shut down \(vm.name)" : "Stop \(vm.name)")
+
+            Button(intent: RestartVMIntent(vm: vm)) {
+                if restartPending {
+                    Text("Restart?").font(.caption2.weight(.bold)).foregroundStyle(.orange)
+                        .frame(height: 18)
+                } else {
+                    Image(systemName: "arrow.clockwise").frame(width: 22, height: 18)
+                }
+            }
+            .disabled(!vm.isRunning)
+            .help(restartPending ? "Click again to restart \(vm.name)" : "Restart \(vm.name)")
 
             if let url = config.vmPageURL {
                 Link(destination: url) {
