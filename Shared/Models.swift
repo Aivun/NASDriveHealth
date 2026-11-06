@@ -76,6 +76,17 @@ struct HealthSnapshot: Codable, Sendable {
     let drives: [DriveHealth]
     let pools: [PoolSummary]
     let alerts: [NASAlert]
+    /// nil when the VM list couldn't be read (older snapshot, or no VM support).
+    var vms: [VMInfo]? = nil
+    /// Whether the API key's account holds VM_WRITE / FULL_ADMIN (nil = couldn't tell).
+    var canControlVMs: Bool? = nil
+
+    var sortedVMs: [VMInfo] {
+        (vms ?? []).sorted {
+            if $0.isRunning != $1.isRunning { return $0.isRunning }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
 
     var level: HealthLevel {
         let all = drives.map(\.level) + pools.map(\.level) + alerts.map(\.level)
@@ -95,4 +106,25 @@ struct HealthSnapshot: Codable, Sendable {
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
     }
+}
+
+struct VMInfo: Codable, Identifiable, Hashable, Sendable {
+    let id: Int
+    let name: String
+    let description: String
+    let state: String          // RUNNING / STOPPED / SUSPENDED / …
+    let autostart: Bool
+    let vcpus: Int             // vcpus × cores × threads
+    let memoryMiB: Int
+
+    var isRunning: Bool { state == "RUNNING" }
+    var isStopped: Bool { state == "STOPPED" }
+
+    var specText: String {
+        let gb = Double(memoryMiB) / 1024
+        let mem = gb >= 10 || gb == gb.rounded() ? "\(Int(gb.rounded())) GB" : String(format: "%.1f GB", gb)
+        return "\(vcpus) vCPU · \(mem)"
+    }
+
+    var stateLabel: String { String(state.prefix(1)) + state.dropFirst().lowercased() }
 }

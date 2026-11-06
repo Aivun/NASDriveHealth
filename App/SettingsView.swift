@@ -21,6 +21,8 @@ struct SettingsView: View {
             Section("TrueNAS") {
                 TextField("Host", text: $draft.host, prompt: Text("truenas.local or 192.168.1.10"))
                 TextField("Username", text: $draft.username, prompt: Text("e.g. widget-monitor"))
+                TextField("VM page path", text: $draft.vmPagePath, prompt: Text("/ui/vm"))
+                    .help("Web UI page opened by the VM settings (gear) button")
                 SecureField("API key", text: $apiKey)
                 if !draft.pinnedFingerprint.isEmpty {
                     LabeledContent("Trusted certificate") {
@@ -110,7 +112,16 @@ struct SettingsView: View {
         }
         do {
             let snap = try await HealthService.fetch(config: draft, apiKey: apiKey)
-            status = .success("Connected to \(snap.hostname) \(snap.version) — \(snap.drives.count) drives, overall \(snap.level.label.lowercased()).")
+            var msg = "Connected to \(snap.hostname) \(snap.version) — \(snap.drives.count) drives, overall \(snap.level.label.lowercased())."
+            if let vms = snap.vms {
+                msg += " \(vms.count) VM\(vms.count == 1 ? "" : "s")"
+                switch snap.canControlVMs {
+                case .some(true): msg += " (start/stop allowed)."
+                case .some(false): msg += " (read-only — see README to enable start/stop)."
+                case .none: msg += "."
+                }
+            }
+            status = .success(msg)
             await model.refresh()
         } catch TrueNASClient.ClientError.untrustedCertificate(let fp) {
             status = .untrusted(fp)

@@ -59,8 +59,21 @@ enum HealthService {
 
             let alerts = (try? await client.call("alert.list")) as? [[String: Any]] ?? []
 
-            return evaluate(info: info, disks: disks, temps: temps, pools: poolDicts,
-                            alerts: alerts, config: config)
+            var snapshot = evaluate(info: info, disks: disks, temps: temps, pools: poolDicts,
+                                    alerts: alerts, config: config)
+
+            // Virtual machines (optional — absent on systems without VM support)
+            let vmAny: Any? = try? await client.call("vm.query")
+            if let list = vmAny as? [[String: Any]] { snapshot.vms = parseVMs(list) }
+
+            // Can this key start/stop VMs? Look for the role names in auth.me.
+            let meAny: Any? = try? await client.call("auth.me")
+            if let me = meAny, JSONSerialization.isValidJSONObject(me),
+               let data = try? JSONSerialization.data(withJSONObject: me),
+               let text = String(data: data, encoding: .utf8) {
+                snapshot.canControlVMs = text.contains("\"VM_WRITE\"") || text.contains("\"FULL_ADMIN\"")
+            }
+            return snapshot
         }
     }
 
@@ -191,6 +204,21 @@ enum HealthService {
                 let path = v.str("path").map { ($0 as NSString).lastPathComponent } ?? "member"
                 issues.append("Missing member \(path): \(status)")
             }
+        }
+    }
+
+    static func parseVMs(_ list: [[String: Any]]) -> [VMInfo] {
+        list.compactMap { v in
+            guard let id = v.int("id") else { return nil }
+            let status = v.dict("status") ?? [:]
+            let vcpus = max(1, v.int("vcpus") ?? 1) * max(1, v.int("cores") ?? 1) * max(1, v.int("threads") ?? 1)
+            return VMInfo(id: id,
+                          name: v.str("name") ?? "VM \(id)",
+                          description: v.str("description") ?? "",
+                          state: (status.str("state") ?? "UNKNOWN").uppercased(),
+                          autostart: (v["autostart"] as? Bool) ?? false,
+                          vcpus: vcpus,
+                          memoryMiB: v.int("memory") ?? 0)
         }
     }
 

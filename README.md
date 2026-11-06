@@ -1,7 +1,8 @@
 # NAS Drive Health — macOS desktop widget for TrueNAS
 
 A native WidgetKit widget (small / medium / large) plus a tiny menu bar app that shows the
-health of every drive in your TrueNAS box — HDDs, SATA SSDs and NVMe alike.
+health of every drive in your TrueNAS box — HDDs, SATA SSDs and NVMe alike. A second widget,
+**NAS Virtual Machines**, lists your TrueNAS VMs with **Start**, **Stop** and **Settings** buttons.
 
 Per drive it shows: status dot, device name, HDD/SSD/NVMe badge, model & size (large widget),
 temperature, and ZFS read/write/checksum error counts. A drive turns **orange/red** when:
@@ -97,8 +98,34 @@ container.
 ## 4. Add the widget
 
 Right-click the desktop → **Edit Widgets…** → search **NAS Drive Health** → drag the small,
-medium or large size onto the desktop (or into Notification Center). The ↻ button in the corner
+medium or large size onto the desktop (or into Notification Center). Add **NAS Virtual Machines**
+the same way if you want the VM buttons. The ↻ button in the corner
 refreshes on demand.
+
+## VM controls (optional)
+
+The **NAS Virtual Machines** widget (medium / large) and the menu bar app discover every VM from
+`vm.query` and show three buttons per VM:
+
+| Button | What it does |
+|---|---|
+| ▶ Start | `vm.start` — enabled when the VM is stopped |
+| ■ Stop | graceful ACPI shutdown (`vm.stop`, not forced). **Click twice** — the first click turns it into *Stop?* for 10 s |
+| ⚙ Settings | opens the Virtual Machines page of the TrueNAS web UI in your browser (path configurable in Settings, default `/ui/vm`) |
+
+Listing VMs works with the read-only account. **Starting and stopping needs the `VM_WRITE` role**,
+which *Readonly Admin* doesn't include. Give the widget account just that one extra role:
+
+1. **Credentials → Groups → Add**: create a group, e.g. `nas-widget-vm`.
+2. **Credentials → Groups → Privileges → Add**: name it e.g. `Widget VM control`, choose the local group
+   `nas-widget-vm`, and under **Roles** pick only `VM_WRITE`. Save.
+3. **Credentials → Users → widget-monitor → Edit**: add `nas-widget-vm` to **Auxiliary Groups**. Save.
+
+The existing API key picks up the new role on its next call; no new key is needed. *Save & Test Connection*
+in the app reports whether start/stop is allowed.
+
+Note that `VM_WRITE` also allows editing or deleting VMs through the API. The app never does that, but treat
+the key accordingly.
 
 ## Behaviour & tuning
 
@@ -118,7 +145,9 @@ Shared/HealthService.swift  Queries + health evaluation → HealthSnapshot
 Shared/Storage.swift        Settings, API key, cached snapshot (App Group)
 Shared/Models.swift, Style.swift
 App/                        Menu bar app + settings window
-Widget/DriveHealthWidget.swift  WidgetKit widget (3 sizes, refresh button)
+Widget/DriveHealthWidget.swift  Drive health widget (3 sizes, refresh button)
+Widget/VMWidget.swift       VM widget + start/stop intents
+Shared/VMControl.swift      vm.start / vm.stop
 ```
 
 ## Troubleshooting

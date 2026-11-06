@@ -74,8 +74,10 @@ final class TrueNASClient: NSObject, URLSessionDelegate, @unchecked Sendable {
                 // Skip event notifications and replies to other ids.
                 guard let rid = (obj["id"] as? NSNumber)?.intValue, rid == id else { continue }
                 if let err = obj["error"] as? [String: Any] {
-                    let code = (err["code"] as? NSNumber)?.intValue ?? 0
                     let dataObj = err["data"] as? [String: Any]
+                    // Prefer the middleware errno (e.g. 13 = EACCES) over the generic JSON-RPC code.
+                    let code = (dataObj?["error"] as? NSNumber)?.intValue
+                        ?? (err["code"] as? NSNumber)?.intValue ?? 0
                     let msg = (dataObj?["reason"] as? String) ?? (err["message"] as? String) ?? "unknown error"
                     throw ClientError.rpc(code: code, message: msg)
                 }

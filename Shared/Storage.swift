@@ -27,6 +27,7 @@ struct NASConfig: Codable, Equatable, Sendable {
     var username: String = ""             // the TrueNAS user the API key belongs to
     var pinnedFingerprint: String = ""    // SHA-256 of the NAS's TLS cert, set when you trust a self-signed cert
     var refreshMinutes: Int = 10
+    var vmPagePath: String = "/ui/vm"     // TrueNAS web UI page the VM "settings" button opens
     var hddWarn: Double = 50
     var hddCrit: Double = 58
     var ssdWarn: Double = 65
@@ -42,6 +43,7 @@ struct NASConfig: Codable, Equatable, Sendable {
         username = try c.decodeIfPresent(String.self, forKey: .username) ?? d.username
         pinnedFingerprint = try c.decodeIfPresent(String.self, forKey: .pinnedFingerprint) ?? d.pinnedFingerprint
         refreshMinutes = try c.decodeIfPresent(Int.self, forKey: .refreshMinutes) ?? d.refreshMinutes
+        vmPagePath = try c.decodeIfPresent(String.self, forKey: .vmPagePath) ?? d.vmPagePath
         hddWarn = try c.decodeIfPresent(Double.self, forKey: .hddWarn) ?? d.hddWarn
         hddCrit = try c.decodeIfPresent(Double.self, forKey: .hddCrit) ?? d.hddCrit
         ssdWarn = try c.decodeIfPresent(Double.self, forKey: .ssdWarn) ?? d.ssdWarn
@@ -77,6 +79,14 @@ struct NASConfig: Codable, Equatable, Sendable {
     /// Always TLS: TrueNAS revokes a user-linked API key the first time it is sent over plain HTTP.
     var webSocketURL: URL? { cleanHost.isEmpty ? nil : URL(string: "wss://\(cleanHost)/api/current") }
     var webUIURL: URL? { cleanHost.isEmpty ? nil : URL(string: "https://\(cleanHost)/") }
+
+    var vmPageURL: URL? {
+        guard !cleanHost.isEmpty else { return nil }
+        var path = vmPagePath.trimmingCharacters(in: .whitespaces)
+        if path.isEmpty { path = NASConfig.defaultValue.vmPagePath }
+        if !path.hasPrefix("/") { path = "/" + path }
+        return URL(string: "https://\(cleanHost)\(path)")
+    }
 }
 
 // MARK: - API key
@@ -145,4 +155,26 @@ enum SnapshotStore {
         get { AppGroup.defaults.string(forKey: errorKey) }
         set { AppGroup.defaults.set(newValue, forKey: errorKey) }
     }
+}
+
+// MARK: - Two-tap "Stop" confirmation for widget buttons
+
+enum PendingStopStore {
+    private static let key = "pendingStops"
+    static let window: TimeInterval = 10
+
+    private static var all: [String: Double] {
+        get { AppGroup.defaults.dictionary(forKey: key) as? [String: Double] ?? [:] }
+        set { AppGroup.defaults.set(newValue, forKey: key) }
+    }
+
+    /// VM ids whose Stop button was tapped once within the confirmation window.
+    static var active: Set<Int> {
+        let now = Date().timeIntervalSince1970
+        return Set(all.compactMap { k, t in now - t < window ? Int(k) : nil })
+    }
+
+    static func isPending(_ id: Int) -> Bool { active.contains(id) }
+    static func set(_ id: Int) { var a = all; a[String(id)] = Date().timeIntervalSince1970; all = a }
+    static func clear(_ id: Int) { var a = all; a[String(id)] = nil; all = a }
 }

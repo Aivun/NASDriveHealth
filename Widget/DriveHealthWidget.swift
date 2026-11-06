@@ -9,6 +9,7 @@ struct HealthEntry: TimelineEntry {
     let snapshot: HealthSnapshot?
     let error: String?
     let config: NASConfig
+    var pendingStops: Set<Int> = []
 }
 
 struct Provider: TimelineProvider {
@@ -28,17 +29,29 @@ struct Provider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<HealthEntry>) -> Void) {
         Task {
             let config = NASConfig.load()
-            let entry: HealthEntry
+            let pending = PendingStopStore.active
+            var entry: HealthEntry
             // The menu bar app refreshes on its own schedule and then reloads the widget;
-            // if its data is fresh, use it instead of hitting the NAS again.
-            if let cached = SnapshotStore.load(), Date().timeIntervalSince(cached.fetchedAt) < 90 {
+            // if its data is fresh (or a Stop confirmation is showing), skip hitting the NAS.
+            if let cached = SnapshotStore.load(),
+               !pending.isEmpty || Date().timeIntervalSince(cached.fetchedAt) < 90 {
                 entry = HealthEntry(date: .now, snapshot: cached, error: SnapshotStore.lastError, config: config)
             } else {
                 let outcome = await HealthService.refreshAndStore()
                 entry = HealthEntry(date: .now, snapshot: outcome.snapshot, error: outcome.error, config: config)
             }
+            entry.pendingStops = pending
+            var entries = [entry]
+            if !pending.isEmpty {
+                // Drop the "Stop?" confirmation once its window has passed.
+                var cleared = entry
+                cleared.pendingStops = []
+                entries.append(HealthEntry(date: Date().addingTimeInterval(PendingStopStore.window),
+                                           snapshot: cleared.snapshot, error: cleared.error,
+                                           config: cleared.config))
+            }
             let next = Date().addingTimeInterval(Double(max(5, config.refreshMinutes)) * 60)
-            completion(Timeline(entries: [entry], policy: .after(next)))
+            completion(Timeline(entries: entries, policy: .after(next)))
         }
     }
 }
@@ -57,7 +70,10 @@ struct RefreshDrivesIntent: AppIntent {
 
 @main
 struct DriveHealthWidgetBundle: WidgetBundle {
-    var body: some Widget { DriveHealthWidget() }
+    var body: some Widget {
+        DriveHealthWidget()
+        VMWidget()
+    }
 }
 
 struct DriveHealthWidget: Widget {
